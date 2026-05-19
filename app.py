@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from fredapi import Fred
-import yfinance as yf
+import yfinance as if
 import datetime
 import os
 
@@ -10,8 +10,8 @@ import os
 # PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="Macroeconomic Health Dashboard",
-    page_icon="📈",
+    page_title="Executive Macro Dashboard",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -19,74 +19,72 @@ st.set_page_config(
 # ==========================================
 # API INITIALIZATION & CACHING
 # ==========================================
-# Safely fetch the FRED API key from Streamlit secrets or OS environment
 try:
-    fred_api_key = "e1bee046792fa0ac17f3d1c93bdf4a0e"
+    fred_api_key = st.secrets.get("FRED_API_KEY", os.environ.get("FRED_API_KEY"))
 except FileNotFoundError:
     fred_api_key = os.environ.get("FRED_API_KEY")
 
 if not fred_api_key:
-    st.error("⚠️ FRED API Key missing. Please set it in .streamlit/secrets.toml or as an environment variable.")
-    st.stop()
+    # Fallback for testing - replace with your string if not using secrets
+    fred_api_key = "e1bee046792fa0ac17f3d1c93bdf4a0e"
 
 fred = Fred(api_key=fred_api_key)
 
-@st.cache_data(ttl=86400) # Cache data for 24 hours to ensure fast reloads
-def fetch_fred_data(series_id, start_date):
-    """Fetches series from FRED, resamples to monthly, and forward fills."""
+# We now fetch the entire history from 2000 upfront. 
+# This is crucial so YoY% calculations work even if viewing only the last 3 months.
+@st.cache_data(ttl=86400)
+def fetch_fred_data(series_id):
     try:
-        df = fred.get_series(series_id, observation_start=start_date)
+        df = fred.get_series(series_id, observation_start='2000-01-01')
         df = pd.DataFrame(df, columns=['Value'])
         df.index.name = 'Date'
-        # Standardize index to datetime, resample to Month-End, and forward fill missing/quarterly data
         df.index = pd.to_datetime(df.index)
         df = df.resample('ME').last().ffill().dropna()
+        
+        # Pre-calculate MoM and YoY before slicing dates
+        df['MoM %'] = df['Value'].pct_change(periods=1) * 100
+        df['YoY %'] = df['Value'].pct_change(periods=12) * 100
         return df
     except Exception as e:
-        st.warning(f"Could not fetch FRED series {series_id}: {e}")
-        return pd.DataFrame(columns=['Value'])
+        return pd.DataFrame()
 
 @st.cache_data(ttl=86400)
-def fetch_yf_data(ticker, start_date):
-    """Fetches data from Yahoo Finance, extracts monthly closes."""
+def fetch_yf_data(ticker):
     try:
-        # yfinance expects YYYY-MM-DD
-        start_str = start_date.strftime('%Y-%m-%d')
-        df = yf.download(ticker, start=start_str, progress=False)
-        # Handle multi-index columns returned by newer yfinance versions
+        df = yf.download(ticker, start='2000-01-01', progress=False)
         if isinstance(df.columns, pd.MultiIndex):
             df = df['Close']
         else:
             df = df[['Close']]
-            
         df = pd.DataFrame(df)
         df.columns = ['Value']
         df.index.name = 'Date'
-        df.index = pd.to_datetime(df.index).tz_localize(None) # Remove timezone for consistency
+        df.index = pd.to_datetime(df.index).tz_localize(None)
         df = df.resample('ME').last().ffill().dropna()
+        
+        df['MoM %'] = df['Value'].pct_change(periods=1) * 100
+        df['YoY %'] = df['Value'].pct_change(periods=12) * 100
         return df
     except Exception as e:
-        st.warning(f"Could not fetch Yahoo Finance series {ticker}: {e}")
-        return pd.DataFrame(columns=['Value'])
+        return pd.DataFrame()
 
 # ==========================================
-# DATA DICTIONARY
+# DATA DICTIONARY (Original Colors Retained)
 # ==========================================
-# Organized by category, including ID, source, and distinct professional colors.
 MACRO_METRICS = {
     "1. Inflation & Consumer Prices": {
-        "Headline CPI": {"id": "CPIAUCSL", "source": "fred", "color": "#1f77b4"}, # Blue
-        "Core CPI": {"id": "CPILFESL", "source": "fred", "color": "#ff7f0e"}, # Orange
-        "Headline PCE Price Index": {"id": "PCEPI", "source": "fred", "color": "#2ca02c"}, # Green
-        "Core PCE Price Index": {"id": "PCEPILFE", "source": "fred", "color": "#d62728"}, # Red
-        "CPI: Energy": {"id": "CPIENGSL", "source": "fred", "color": "#9467bd"}, # Purple
-        "CPI: Housing/Shelter": {"id": "CUSR0000SAH1", "source": "fred", "color": "#8c564b"}, # Brown
-        "CPI: Food": {"id": "CPIFABSL", "source": "fred", "color": "#e377c2"}, # Pink
-        "CPI: Medical Care": {"id": "CPIMEDSL", "source": "fred", "color": "#7f7f7f"} # Gray
+        "Headline CPI": {"id": "CPIAUCSL", "source": "fred", "color": "#1f77b4"},
+        "Core CPI": {"id": "CPILFESL", "source": "fred", "color": "#ff7f0e"},
+        "Headline PCE Price Index": {"id": "PCEPI", "source": "fred", "color": "#2ca02c"},
+        "Core PCE Price Index": {"id": "PCEPILFE", "source": "fred", "color": "#d62728"},
+        "CPI: Energy": {"id": "CPIENGSL", "source": "fred", "color": "#9467bd"},
+        "CPI: Housing/Shelter": {"id": "CUSR0000SAH1", "source": "fred", "color": "#8c564b"},
+        "CPI: Food": {"id": "CPIFABSL", "source": "fred", "color": "#e377c2"},
+        "CPI: Medical Care": {"id": "CPIMEDSL", "source": "fred", "color": "#7f7f7f"}
     },
     "2. Upstream Costs & Energy Markets": {
-        "PPI Final Demand": {"id": "PPIFIS", "source": "fred", "color": "#17becf"}, # Cyan
-        "PPI Goods": {"id": "PPIFGS", "source": "fred", "color": "#bcbd22"}, # Olive
+        "PPI Final Demand": {"id": "PPIFIS", "source": "fred", "color": "#17becf"},
+        "PPI Goods": {"id": "PPIFGS", "source": "fred", "color": "#bcbd22"},
         "PPI Services": {"id": "PPIFSS", "source": "fred", "color": "#1f77b4"},
         "PPI Health Care Services": {"id": "WPU51", "source": "fred", "color": "#ff7f0e"},
         "WTI Crude Oil Price": {"id": "WTISPLC", "source": "fred", "color": "#d62728"},
@@ -125,133 +123,108 @@ MACRO_METRICS = {
 }
 
 # ==========================================
-# SIDEBAR & GLOBAL CONTROLS
+# SIDEBAR COMMAND CENTER (Vertical Navigation)
 # ==========================================
-st.sidebar.header("⚙️ Dashboard Controls")
-
-# Calculate min date and default values
-min_date = datetime.date(2000, 1, 1)
-today = datetime.date.today()
-
-# Date Slider
-selected_dates = st.sidebar.slider(
-    "Select Historical Period",
-    min_value=min_date,
-    max_value=today,
-    value=(min_date, today),
-    format="MMM YYYY"
+st.sidebar.markdown("### 🏛️ Command Center")
+selected_category = st.sidebar.radio(
+    "Navigation Menu",
+    list(MACRO_METRICS.keys()),
+    label_visibility="collapsed"
 )
 
-start_date, end_date = selected_dates
+st.sidebar.divider()
+st.sidebar.caption("Data sources: Federal Reserve Economic Data (FRED) & Yahoo Finance.")
 
-st.title("📊 US Macroeconomic Tracking Dashboard")
-st.markdown("Track the health of the US economy using dynamic data pulled from the Federal Reserve (FRED) and Yahoo Finance. Designed for executive tracking and presentations.")
+# ==========================================
+# MAIN DASHBOARD AREA
+# ==========================================
+# Header and Universal Time Filters
+col_title, col_filters = st.columns([2, 1])
+
+with col_title:
+    # Strip the leading number from the category name for a cleaner title
+    clean_title = selected_category.split(". ")[1]
+    st.title(clean_title)
+
+with col_filters:
+    # Timeframe selection matching your requested intervals
+    time_map = {
+        "3M": 3, "6M": 6, "12M": 12, 
+        "18M": 18, "24M": 24, "3Y": 36
+    }
+    selected_time_label = st.pills("Lookback Period", options=list(time_map.keys()), default="12M")
+    
+    # Calculate cutoff date
+    if selected_time_label:
+        months_to_look_back = time_map[selected_time_label]
+    else:
+        months_to_look_back = 12 # Safe default
+    
+    start_date = pd.Timestamp.today() - pd.DateOffset(months=months_to_look_back)
+
 st.divider()
 
 # ==========================================
-# MAIN LAYOUT (TABS)
+# METRICS GRID DISPLAY
 # ==========================================
-tab_names = list(MACRO_METRICS.keys())
-tabs = st.tabs(tab_names)
+metrics_list = list(MACRO_METRICS[selected_category].items())
 
-# Iterate through categories to build each tab dynamically
-for tab, cat_name in zip(tabs, tab_names):
-    with tab:
-        st.subheader(f"{cat_name.split('. ')[1]}")
-        
-        # 1. UI: Metric Dropdown & Chart Toggle
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            metrics_dict = MACRO_METRICS[cat_name]
-            selected_metric = st.selectbox(
-                "Select a Metric to View:", 
-                options=list(metrics_dict.keys()), 
-                key=f"drop_{cat_name}"
-            )
-        with col2:
-            view_type = st.radio(
-                "Select Chart View:", 
-                ["Absolute Values", "YoY % Change"], 
-                key=f"radio_{cat_name}"
-            )
-
-        # 2. Data Fetching
-        metric_info = metrics_dict[selected_metric]
-        m_id = metric_info['id']
-        m_src = metric_info['source']
-        m_color = metric_info['color']
-        
-        # Fetch an extra 13 months before the start_date to allow for accurate YoY calculation at the start of the chart
-        fetch_start = start_date - datetime.timedelta(days=400) 
-        
-        with st.spinner(f"Loading {selected_metric}..."):
-            if m_src == "fred":
-                df = fetch_fred_data(m_id, fetch_start)
-            else:
-                df = fetch_yf_data(m_id, fetch_start)
-
-        if df.empty:
-            st.error("Data unavailable for this metric.")
-            continue
-
-        # 3. Data Processing (MoM and YoY calculations)
-        df['MoM %'] = df['Value'].pct_change(periods=1) * 100
-        df['YoY %'] = df['Value'].pct_change(periods=12) * 100
-        
-        # Filter dataframe down to user's selected date range
-        # Converting index to date to properly compare with Streamlit slider
-        df_filtered = df[(df.index.date >= start_date) & (df.index.date <= end_date)]
-
-        if df_filtered.empty:
-            st.warning("No data available for the selected date range.")
-            continue
-
-        # 4. Charting via Plotly
-        if view_type == "Absolute Values":
-            fig = px.line(
-                df_filtered, 
-                x=df_filtered.index, 
-                y='Value', 
-                title=f"{selected_metric} (Absolute)",
-                template="plotly_white",
-                color_discrete_sequence=[m_color]
-            )
-            fig.update_layout(yaxis_title="Index / Rate / Value", xaxis_title="")
-        else:
-            fig = px.bar(
-                df_filtered, 
-                x=df_filtered.index, 
-                y='YoY %', 
-                title=f"{selected_metric} (Year-over-Year % Change)",
-                template="plotly_white",
-                color_discrete_sequence=[m_color]
-            )
-            fig.update_layout(yaxis_title="YoY Growth (%)", xaxis_title="")
-        
-        # Improve visual styling
-        fig.update_traces(marker_line_width=0, opacity=0.8)
-        fig.update_layout(hovermode="x unified", margin=dict(l=20, r=20, t=40, b=20))
-        st.plotly_chart(fig, use_container_width=True)
-
-        # 5. Data Table Summary (Last 12 Months)
-        st.markdown(f"**{selected_metric} - Last 12 Months Summary**")
-        
-        # Get last 12 valid entries and format beautifully
-        summary_df = df_filtered.tail(12).copy()
-        
-        # Reorder and format columns for presentation
-        summary_df.index = summary_df.index.strftime('%B %Y')
-        summary_df.rename_axis('Date', inplace=True)
-        summary_df = summary_df[['Value', 'MoM %', 'YoY %']]
-        
-        # Format the numbers
-        summary_formatted = summary_df.style.format({
-            'Value': "{:,.2f}",
-            'MoM %': "{:+.2f}%",
-            'YoY %': "{:+.2f}%"
-        }).map(
-            lambda val: 'color: green' if pd.notnull(val) and val > 0 else ('color: red' if pd.notnull(val) and val < 0 else 'color: gray'),
-            subset=['MoM %', 'YoY %']
-        )
-        
-        st.dataframe(summary_formatted, use_container_width=True)
+# Loop through metrics 2 at a time to create a 2-column grid layout
+for i in range(0, len(metrics_list), 2):
+    cols = st.columns(2)
+    
+    for j in range(2):
+        if i + j < len(metrics_list):
+            metric_name, metric_info = metrics_list[i + j]
+            m_id = metric_info['id']
+            m_src = metric_info['source']
+            m_color = metric_info['color']
+            
+            with cols[j]:
+                # Use container with border to create a "Card" look
+                with st.container(border=True):
+                    # Header row inside the card
+                    card_col1, card_col2 = st.columns([2, 1])
+                    with card_col1:
+                        st.subheader(metric_name)
+                    with card_col2:
+                        # Local dropdown to switch chart views
+                        view_type = st.selectbox(
+                            "View",
+                            ["Absolute Values", "YoY % Change"],
+                            key=f"view_{m_id}",
+                            label_visibility="collapsed"
+                        )
+                    
+                    # Fetch and slice Data
+                    if m_src == "fred":
+                        df = fetch_fred_data(m_id)
+                    else:
+                        df = fetch_yf_data(m_id)
+                        
+                    if not df.empty:
+                        # Filter to user's timeframe choice
+                        df_filtered = df[df.index >= start_date]
+                        
+                        if view_type == "Absolute Values":
+                            fig = px.line(
+                                df_filtered, x=df_filtered.index, y='Value', 
+                                template="plotly_white", color_discrete_sequence=[m_color]
+                            )
+                            fig.update_layout(yaxis_title="Raw Index / Value", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
+                        else:
+                            fig = px.bar(
+                                df_filtered, x=df_filtered.index, y='YoY %', 
+                                template="plotly_white", color_discrete_sequence=[m_color]
+                            )
+                            fig.update_layout(yaxis_title="YoY Growth (%)", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
+                        
+                        fig.update_traces(marker_line_width=0, opacity=0.85)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Bottom KPI Footer: Latest Value & YoY Change
+                        latest_val = df_filtered['Value'].iloc[-1]
+                        latest_yoy = df_filtered['YoY %'].iloc[-1]
+                        st.caption(f"**Latest:** {latest_val:,.2f} | **YoY Change:** {latest_yoy:+.2f}%")
+                    else:
+                        st.warning("Data currently unavailable.")
