@@ -202,7 +202,7 @@ for i in range(0, len(metrics_list), 2):
                     else:
                         df = fetch_yf_data(m_id)
                         
-                    if not df.empty:
+                    if not df_filtered.empty:
                         # Filter to user's timeframe choice
                         df_filtered = df[df.index >= start_date]
                         
