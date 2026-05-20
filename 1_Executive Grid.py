@@ -4,7 +4,6 @@ import plotly.express as px
 from fredapi import Fred
 import yfinance as yf
 import datetime
-import os
 
 # ==========================================
 # PAGE CONFIGURATION
@@ -17,16 +16,14 @@ st.set_page_config(
 )
 
 # ==========================================
-# API INITIALIZATION & CACHING
+# API INITIALIZATION (SECURE VAULT)
 # ==========================================
 try:
+    # This pulls the key directly from Streamlit's secure settings
     fred_api_key = st.secrets["FRED_API_KEY"]
-except KeyError:
+except (KeyError, FileNotFoundError):
     st.error("⚠️ FRED API Key missing from the Streamlit vault.")
     st.stop()
-if not fred_api_key:
-    # Replace with your actual FRED API key inside the quotes
-    fred_api_key = "HIDDEN_IN_SECRETS"
 
 fred = Fred(api_key=fred_api_key)
 
@@ -128,7 +125,6 @@ selected_category = st.sidebar.radio(
     list(MACRO_METRICS.keys()),
     label_visibility="collapsed"
 )
-
 st.sidebar.divider()
 st.sidebar.caption("Data sources: FRED & Yahoo Finance.")
 
@@ -149,7 +145,6 @@ with col_filters:
         months_to_look_back = time_map[selected_time_label]
     else:
         months_to_look_back = 12 
-    
     start_date = pd.Timestamp.today() - pd.DateOffset(months=months_to_look_back)
 
 st.divider()
@@ -161,7 +156,6 @@ metrics_list = list(MACRO_METRICS[selected_category].items())
 
 for i in range(0, len(metrics_list), 2):
     cols = st.columns(2)
-    
     for j in range(2):
         if i + j < len(metrics_list):
             metric_name, metric_info = metrics_list[i + j]
@@ -189,19 +183,12 @@ for i in range(0, len(metrics_list), 2):
                         
                     if not df.empty:
                         df_filtered = df[df.index >= start_date]
-                        
                         if not df_filtered.empty:
                             if view_type == "Absolute Values":
-                                fig = px.line(
-                                    df_filtered, x=df_filtered.index, y='Value', 
-                                    template="plotly_white", color_discrete_sequence=[m_color]
-                                )
+                                fig = px.line(df_filtered, x=df_filtered.index, y='Value', template="plotly_white", color_discrete_sequence=[m_color])
                                 fig.update_layout(yaxis_title="Raw Index / Value", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
                             else:
-                                fig = px.bar(
-                                    df_filtered, x=df_filtered.index, y='YoY %', 
-                                    template="plotly_white", color_discrete_sequence=[m_color]
-                                )
+                                fig = px.bar(df_filtered, x=df_filtered.index, y='YoY %', template="plotly_white", color_discrete_sequence=[m_color])
                                 fig.update_layout(yaxis_title="YoY Growth (%)", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
                             
                             fig.update_traces(marker_line_width=0, opacity=0.85)
@@ -211,6 +198,6 @@ for i in range(0, len(metrics_list), 2):
                             latest_yoy = df_filtered['YoY %'].iloc[-1]
                             st.caption(f"**Latest:** {latest_val:,.2f} | **YoY Change:** {latest_yoy:+.2f}%")
                         else:
-                            st.warning("No data available for this specific timeframe.")
+                            st.warning("No data available for this timeframe.")
                     else:
                         st.warning("Data currently unavailable.")
