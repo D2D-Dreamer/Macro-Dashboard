@@ -26,7 +26,7 @@ except FileNotFoundError:
 
 if not fred_api_key:
     # Replace with your actual FRED API key inside the quotes
-    fred_api_key = "e1bee046792fa0ac17f3d1c93bdf4a0e"
+    fred_api_key = "HIDDEN_IN_SECRETS"
 
 fred = Fred(api_key=fred_api_key)
 
