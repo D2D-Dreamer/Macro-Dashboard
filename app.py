@@ -25,13 +25,11 @@ except FileNotFoundError:
     fred_api_key = os.environ.get("FRED_API_KEY")
 
 if not fred_api_key:
-    # Fallback for testing - replace with your string if not using secrets
+    # Replace with your actual FRED API key inside the quotes
     fred_api_key = "e1bee046792fa0ac17f3d1c93bdf4a0e"
 
 fred = Fred(api_key=fred_api_key)
 
-# We now fetch the entire history from 2000 upfront. 
-# This is crucial so YoY% calculations work even if viewing only the last 3 months.
 @st.cache_data(ttl=86400)
 def fetch_fred_data(series_id):
     try:
@@ -41,7 +39,6 @@ def fetch_fred_data(series_id):
         df.index = pd.to_datetime(df.index)
         df = df.resample('ME').last().ffill().dropna()
         
-        # Pre-calculate MoM and YoY before slicing dates
         df['MoM %'] = df['Value'].pct_change(periods=1) * 100
         df['YoY %'] = df['Value'].pct_change(periods=12) * 100
         return df
@@ -69,7 +66,7 @@ def fetch_yf_data(ticker):
         return pd.DataFrame()
 
 # ==========================================
-# DATA DICTIONARY (Original Colors Retained)
+# DATA DICTIONARY
 # ==========================================
 MACRO_METRICS = {
     "1. Inflation & Consumer Prices": {
@@ -123,7 +120,7 @@ MACRO_METRICS = {
 }
 
 # ==========================================
-# SIDEBAR COMMAND CENTER (Vertical Navigation)
+# SIDEBAR COMMAND CENTER 
 # ==========================================
 st.sidebar.markdown("### 🏛️ Command Center")
 selected_category = st.sidebar.radio(
@@ -133,32 +130,25 @@ selected_category = st.sidebar.radio(
 )
 
 st.sidebar.divider()
-st.sidebar.caption("Data sources: Federal Reserve Economic Data (FRED) & Yahoo Finance.")
+st.sidebar.caption("Data sources: FRED & Yahoo Finance.")
 
 # ==========================================
 # MAIN DASHBOARD AREA
 # ==========================================
-# Header and Universal Time Filters
 col_title, col_filters = st.columns([2, 1])
 
 with col_title:
-    # Strip the leading number from the category name for a cleaner title
     clean_title = selected_category.split(". ")[1]
     st.title(clean_title)
 
 with col_filters:
-    # Timeframe selection matching your requested intervals
-    time_map = {
-        "3M": 3, "6M": 6, "12M": 12, 
-        "18M": 18, "24M": 24, "3Y": 36
-    }
+    time_map = {"3M": 3, "6M": 6, "12M": 12, "18M": 18, "24M": 24, "3Y": 36}
     selected_time_label = st.pills("Lookback Period", options=list(time_map.keys()), default="12M")
     
-    # Calculate cutoff date
     if selected_time_label:
         months_to_look_back = time_map[selected_time_label]
     else:
-        months_to_look_back = 12 # Safe default
+        months_to_look_back = 12 
     
     start_date = pd.Timestamp.today() - pd.DateOffset(months=months_to_look_back)
 
@@ -169,7 +159,6 @@ st.divider()
 # ==========================================
 metrics_list = list(MACRO_METRICS[selected_category].items())
 
-# Loop through metrics 2 at a time to create a 2-column grid layout
 for i in range(0, len(metrics_list), 2):
     cols = st.columns(2)
     
@@ -181,14 +170,11 @@ for i in range(0, len(metrics_list), 2):
             m_color = metric_info['color']
             
             with cols[j]:
-                # Use container with border to create a "Card" look
                 with st.container(border=True):
-                    # Header row inside the card
                     card_col1, card_col2 = st.columns([2, 1])
                     with card_col1:
                         st.subheader(metric_name)
                     with card_col2:
-                        # Local dropdown to switch chart views
                         view_type = st.selectbox(
                             "View",
                             ["Absolute Values", "YoY % Change"],
@@ -196,35 +182,35 @@ for i in range(0, len(metrics_list), 2):
                             label_visibility="collapsed"
                         )
                     
-                    # Fetch and slice Data
                     if m_src == "fred":
                         df = fetch_fred_data(m_id)
                     else:
                         df = fetch_yf_data(m_id)
                         
-                    if not df_filtered.empty:
-                        # Filter to user's timeframe choice
+                    if not df.empty:
                         df_filtered = df[df.index >= start_date]
                         
-                        if view_type == "Absolute Values":
-                            fig = px.line(
-                                df_filtered, x=df_filtered.index, y='Value', 
-                                template="plotly_white", color_discrete_sequence=[m_color]
-                            )
-                            fig.update_layout(yaxis_title="Raw Index / Value", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
+                        if not df_filtered.empty:
+                            if view_type == "Absolute Values":
+                                fig = px.line(
+                                    df_filtered, x=df_filtered.index, y='Value', 
+                                    template="plotly_white", color_discrete_sequence=[m_color]
+                                )
+                                fig.update_layout(yaxis_title="Raw Index / Value", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
+                            else:
+                                fig = px.bar(
+                                    df_filtered, x=df_filtered.index, y='YoY %', 
+                                    template="plotly_white", color_discrete_sequence=[m_color]
+                                )
+                                fig.update_layout(yaxis_title="YoY Growth (%)", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
+                            
+                            fig.update_traces(marker_line_width=0, opacity=0.85)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            latest_val = df_filtered['Value'].iloc[-1]
+                            latest_yoy = df_filtered['YoY %'].iloc[-1]
+                            st.caption(f"**Latest:** {latest_val:,.2f} | **YoY Change:** {latest_yoy:+.2f}%")
                         else:
-                            fig = px.bar(
-                                df_filtered, x=df_filtered.index, y='YoY %', 
-                                template="plotly_white", color_discrete_sequence=[m_color]
-                            )
-                            fig.update_layout(yaxis_title="YoY Growth (%)", xaxis_title="", height=250, margin=dict(l=0, r=0, t=10, b=0))
-                        
-                        fig.update_traces(marker_line_width=0, opacity=0.85)
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Bottom KPI Footer: Latest Value & YoY Change
-                        latest_val = df_filtered['Value'].iloc[-1]
-                        latest_yoy = df_filtered['YoY %'].iloc[-1]
-                        st.caption(f"**Latest:** {latest_val:,.2f} | **YoY Change:** {latest_yoy:+.2f}%")
+                            st.warning("No data available for this specific timeframe.")
                     else:
                         st.warning("Data currently unavailable.")
