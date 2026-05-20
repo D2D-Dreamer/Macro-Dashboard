@@ -20,7 +20,7 @@ st.set_page_config(
 # API INITIALIZATION & CACHING
 # ==========================================
 # Paste your 32-character FRED API key inside the quotes below!
-fred_api_key = "e1bee046792fa0ac17f3d1c93bdf4a0e"
+fred_api_key = "HIDDEN_IN_SECRETS"
 
 if fred_api_key == "YOUR_API_KEY_HERE":
     st.error("⚠️ FRED API Key missing. Please paste it into the code on Line 23.")
