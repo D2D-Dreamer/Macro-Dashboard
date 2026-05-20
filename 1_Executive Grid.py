@@ -20,10 +20,10 @@ st.set_page_config(
 # API INITIALIZATION & CACHING
 # ==========================================
 try:
-    fred_api_key = st.secrets.get("FRED_API_KEY", os.environ.get("FRED_API_KEY"))
-except FileNotFoundError:
-    fred_api_key = os.environ.get("FRED_API_KEY")
-
+    fred_api_key = st.secrets["FRED_API_KEY"]
+except KeyError:
+    st.error("⚠️ FRED API Key missing from the Streamlit vault.")
+    st.stop()
 if not fred_api_key:
     # Replace with your actual FRED API key inside the quotes
     fred_api_key = "HIDDEN_IN_SECRETS"
