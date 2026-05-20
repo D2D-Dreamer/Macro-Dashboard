@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from fredapi import Fred
-import yfinance as if
+import yfinance as yf
 import datetime
 import os
 
